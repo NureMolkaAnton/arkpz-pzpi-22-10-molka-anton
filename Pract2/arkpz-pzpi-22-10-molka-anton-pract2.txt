@@ -1,0 +1,391 @@
+МІНІСТЕРСТВО ОСВІТИ І НАУКИ УКРАЇНИ
+ХАРКІВСЬКИЙ НАЦІОНАЛЬНИЙ
+УНІВЕРСИТЕТ РАДІОЕЛЕКТРОНІКИ
+
+
+Кафедра «Програмна інженерія»
+
+
+ЗВІТ
+до практичного заняття №2 з дисципліни
+«Аналіз та рефакторинг коду»
+На тему: «Методи рефакторингу коду програмного забезпечення»
+
+
+Виконав: 			Перевірив:
+ст. гр. ПЗПІ-22-10 		ст. викладач кафедри ПІ
+Молька Антон Васильович 	Сокорчук Ігор Петрович
+
+Харків 2024
+
+
+1. Мета:
+Навчитися основним методам рефакторингу коду на основі реальних
+прикладів з власних програмних проєктів. Навчитися ідентифікувати проблеми в
+коді та використовувати відповідні методи рефакторингу для покращення його
+якості.
+2. Завдання:
+Обрати 3 метода рефакторингу з книги Martin Fowler. Refactoring. Improving
+the Design of Existing Code. Навести код без рефакторингу та із застосуванням
+методу на прикладі свого особистого коду зі своїх програм.
+3. Хід роботи:
+Для виконання даної роботи мною було обрано наступні методи:
+- Consolidate Conditional Expression
+- Separate Query from Modifier
+- Split Temporary Variable
+3.1. Consolidate Conditional Expression
+3.1.1. Опис методу
+Цей метод об'єднує кілька умовних операторів із однаковим результатом в
+один спільний вираз. Це дозволяє зробити код більш компактним, зрозумілим та
+зменшує дублювання логіки.
+3.1.2. Пояснення покращення коду наведеного в додатку
+Після рефакторингу, як зображено на рисунках 1–5, код став більш
+структурованим. Замість кількох умов із повторенням результату тепер
+використовується єдиний метод checkNullVariables, який консолідує перевірки. Це
+підвищує читабельність і спрощує внесення змін до логіки перевірки.
+3.2. Separate Query from Modifier
+3.2.1. Опис методу
+Метод відокремлює операції, які змінюють дані, від операцій, що лише
+запитують їх. Це зменшує складність методів, чітко розділяючи відповідальності,
+що сприяє кращому розумінню та тестуванню коду.
+3.2.2. Пояснення покращення коду наведеного в додатку
+Як показано на рисунках 7–11, метод, що одночасно виконував запит і
+змінював дані, був поділений на два окремі. Тепер окремий метод виконує
+перевірку наявності користувача у базі даних, а інший відповідає за додавання
+даних. Це спрощує обробку помилок і полегшує тестування кожної частини
+логіки.
+3.3. Split Temporary Variable
+3.3.1. Опис методу
+Цей метод передбачає використання окремих змінних для кожного логічного
+обчислення замість повторного використання однієї тимчасової змінної. Це
+підвищує прозорість та зменшує ризик помилок.
+3.3.2. Пояснення покращення коду наведеного в додатку
+Як показано на рисунках 12–13, замість багаторазового використання однієї
+змінної були введені окремі змінні для кожної перевірки. Це спрощує відстеження
+значень у різних частинах коду, зменшує можливість ненавмисного перезапису і
+покращує загальну читабельність.
+4. Висновки
+Застосовані методи рефакторингу: Consolidate Conditional Expression,
+Separate Query from Modifier, і Split Temporary Variable значно покращили якість та
+підтримуваність коду. Вони зменшили дублювання логіки, чіткіше розподілили
+відповідальності між методами та підвищили загальну читабельність і
+масштабованість.
+Відео демонстрація презентації: https://youtu.be/wJRpZqRERB0
+
+
+
+ДОДАТОК А
+Програмний код, використаний як приклад у презентації до рефакторингу.
+QHttpServerResponse UserHandler::registerUser(const
+QHttpServerRequest &request)
+{
+QJsonParseError err;
+const auto json = QJsonDocument::fromJson(request.body(),
+&err).object();
+if (!json.contains("email") || !json.contains("password") ||
+!json.contains("login"))
+return ResponseFactory::createResponse("Invalid email,
+loggin or password.",
+QHttpServerResponder::StatusCode::BadRequest);
+QString email = json.value("email").toString();
+QString login = json.value("login").toString();
+QString password = json.value("password").toString();
+Logger::instance().log(QString("[registerUser request] email
+= %1, login = %2, password = %3")
+.arg(email, login, password),
+Logger::LogLevel::Info);
+User user = User(email, login, password);
+if(user.saveInDB()){
+return loginUser(request);
+}
+Logger::instance().log(QString("[registerUser request] User
+with the same email exists."), Logger::LogLevel::Info);
+return ResponseFactory::createResponse("Email already in
+use.", QHttpServerResponder::StatusCode::Conflict);
+}
+bool User::saveInDB()
+{
+if(email_.isNull()) {
+Logger::instance().log(QString("[saveInDB] email is
+NULL!"), Logger::LogLevel::Warning);
+return false;
+}
+if(login_.isNull()) {
+Logger::instance().log(QString("[saveInDB] login is
+NULL!"), Logger::LogLevel::Warning);
+return false;
+}
+if(password_.isNull()) {
+Logger::instance().log(QString("[saveInDB] password is
+NULL!"), Logger::LogLevel::Warning);
+return false;
+}
+QSqlDatabase db = DBController::getDatabase();
+QString checkExistanceQueryString = R"(
+SELECT 1 FROM users
+WHERE users.email = :email;
+)";
+QSqlQuery checkExistanceQuery(DBController::getDatabase());
+checkExistanceQuery.prepare(checkExistanceQueryString);
+checkExistanceQuery.bindValue(":email", email_);
+if(!checkExistanceQuery.exec() ||
+!checkExistanceQuery.next()) {
+return false;
+}
+QString queryString = R"(
+INSERT INTO users (email, login, password)
+VALUES (:email, :login, :password)
+)";
+QSqlQuery query(db);
+query.prepare(checkExistanceQueryString);
+query.bindValue(":email", email_);
+query.bindValue(":login", login_);
+query.bindValue(":password", password_);
+if(query.exec()) {
+return true;
+}
+Logger::instance().log(QString("[saveInDB] Database query
+error!")
+.append(query.lastError().text()), Logger::LogLevel::Warning);
+return false;
+}
+QHttpServerResponse BookHandler::getBookList(const
+QHttpServerRequest &request)
+{
+const int defautLimit = 24;
+const int defaultPage = 1;
+bool ok;
+int limit =
+request.query().queryItemValue("limit").toInt(&ok);
+if (!ok) {
+limit = defautLimit;
+}
+int page =
+request.query().queryItemValue("page").toInt(&ok);
+if (!ok) {
+page = defaultPage;
+}
+Logger::instance().log(QString("[getBookList request]: limit
+= %1, page = %2").arg(limit)
+.arg(page),
+Logger::LogLevel::Info);
+QList<Book> books = BookRepository::fetchBooks(limit, page);
+if (!books.isEmpty()) {
+QJsonArray bookArray;
+for (const Book &book : books) {
+bookArray.append(book.toJson());
+}
+QJsonObject responseJson;
+responseJson["total_count"] =
+BookRepository::getBooksCount();
+responseJson["books"] = bookArray;
+
+QByteArray responseData =
+QJsonDocument(responseJson).toJson(QJsonDocument::Compact);
+return ResponseFactory::createJsonResponse(responseData,
+QHttpServerResponse::StatusCode::Ok);
+}
+Logger::instance().log(QString("[getBookList request] Not
+Found: limit = %1, page = %2").arg(limit)
+.arg(page),
+Logger::LogLevel::Warning);
+return ResponseFactory::createResponse("Books not found.",
+QHttpServerResponse::StatusCode::NotFound);
+}
+
+
+
+
+ДОДАТОК Б
+Програмний код, використаний як приклад у презентації після рефакторингу.
+QHttpServerResponse UserHandler::registerUser(const
+QHttpServerRequest &request)
+{
+QJsonParseError err;
+const auto json = QJsonDocument::fromJson(request.body(),
+&err).object();
+if (!json.contains("email") || !json.contains("password") ||
+!json.contains("login"))
+return ResponseFactory::createResponse("Invalid email,
+loggin or password.",
+QHttpServerResponder::StatusCode::BadRequest);
+QString email = json.value("email").toString();
+QString login = json.value("login").toString();
+QString password = json.value("password").toString();
+Logger::instance().log(QString("[registerUser request] email
+= %1, login = %2, password = %3")
+.arg(email, login, password),
+Logger::LogLevel::Info);
+User user = User(email, login, password);
+if(user.checkExistanceInDB()) {
+Logger::instance().log(QString("[registerUser request]
+User with the same email exists."), Logger::LogLevel::Info);
+return ResponseFactory::createResponse("Email already in
+use.", QHttpServerResponder::StatusCode::Conflict);
+}
+if(user.saveInDB()){
+return loginUser(request);
+}
+Logger::instance().log(QString("[registerUser request] email
+= %1, login = %2, password = %3")
+.arg(email, login, password),
+Logger::LogLevel::Error);
+return ResponseFactory::createResponse("Internal server
+error.", QHttpServerResponder::StatusCode::InternalServerError);
+}
+bool User::saveInDB()
+{
+if(checkNullVariables(email_, login_, password_)) {
+Logger::instance().log(QString("[saveInDB] email, login
+or password is NULL!"), Logger::LogLevel::Warning);
+return false;
+}
+QSqlDatabase db = DBController::getDatabase();
+QString queryString = R"(
+INSERT INTO users (email, login, password)
+VALUES (:email, :login, :password)
+)";
+QSqlQuery query(db);
+query.prepare(queryString);
+query.bindValue(":email", email_);
+query.bindValue(":login", login_);
+query.bindValue(":password", password_);
+if(query.exec()) {
+return true;
+}
+Logger::instance().log(QString("[saveInDB] Database query
+error!")
+.append(query.lastError().text()), Logger::LogLevel::Warning);
+return false;
+}
+bool User::checkExistanceInDB()
+{
+QString queryString = R"(
+SELECT 1 FROM users
+WHERE users.email = :email;
+)";
+QSqlQuery query(DBController::getDatabase());
+query.prepare(queryString);
+query.bindValue(":email", email_);
+return query.exec() && query.next();
+}
+template <typename T>
+concept HasIsNull = requires(T obj) {
+{ obj.isNull() } -> std::convertible_to<bool>;
+};
+template <typename... T>
+requires (HasIsNull<T> && ...)
+bool User::checkNullVariables(T&&... variables) const {
+return (... || variables.isNull());
+}
+QHttpServerResponse BookHandler::getBookList(const
+QHttpServerRequest &request)
+{
+const int defautLimit = 24;
+const int defaultPage = 1;
+bool isLimitOk;
+int limit =
+request.query().queryItemValue("limit").toInt(&isLimitOk);
+if (!isLimitOk) {
+limit = defautLimit;
+}
+bool isPageOk;
+int page =
+request.query().queryItemValue("page").toInt(&isPageOk);
+if (!isPageOk) {
+page = defaultPage;
+}
+Logger::instance().log(QString("[getBookList request]: limit
+= %1, page = %2").arg(limit)
+.arg(page),
+Logger::LogLevel::Info);
+QList<Book> books = BookRepository::fetchBooks(limit, page);
+if (!books.isEmpty()) {
+QJsonArray bookArray;
+for (const Book &book : books) {
+bookArray.append(book.toJson());
+}
+QJsonObject responseJson;
+responseJson["total_count"] =
+BookRepository::getBooksCount();
+responseJson["books"] = bookArray;
+QByteArray responseData =
+QJsonDocument(responseJson).toJson(QJsonDocument::Compact);
+return ResponseFactory::createJsonResponse(responseData,
+QHttpServerResponse::StatusCode::Ok);
+}
+Logger::instance().log(QString("[getBookList request] Not
+Found: limit = %1, page = %2").arg(limit)
+.arg(page),
+Logger::LogLevel::Warning);
+return ResponseFactory::createResponse("Books not found.",
+QHttpServerResponse::StatusCode::NotFound);
+}
+
+
+
+Додаток В
+Презентація Refactoring Methods
+Refactoring Methods C++
+Підготував:
+студент групи ПЗПІ-22-10
+Молька Антон Васильович
+05.12.24
+Мета роботи
+Метою даної роботи є дослідження та застосування методів
+рефакторингу на прикладі реального коду, з метою покращення
+його структури та якості. У процесі роботи було вибрано
+наступні методи: Consolidate Conditional Expression, Separate
+Query from Modifier та Split Temporary Variable та застосовано
+їх до реального коду, що дозволило підвищити його читаємість,
+зменшити складність та покращити підтримуваність.
+2
+Consolidate Conditional Expression
+3
+Рисунок 1 – Кілька if statements з однаковим результатом
+Consolidate Conditional Expression
+4
+Рисунок 2 – Варіант виправлення 1
+Consolidate Conditional Expression
+5
+Рисунок 3 – Покращений варіант виправлення
+Consolidate Conditional Expression
+6
+Рисунок 6 – Реалізація методу checkNullVariablesРисунок 5 – Оголошення методу checkNullVariables
+Рисунок 4 – Концепт перевірки наявності метода isNull
+Separate Query from Modifier
+7
+Рисунок 7 – Використання методу, що самостійно перевіряє наявність
+вказаного користувача у базі даних та за відсутності додає його у неї.
+Separate Query from Modifier
+8Рисунок 8 – Метод що робить запит та змінює дані одночасно
+Separate Query from Modifier
+9Рисунок 9 – Окремий метод, що робить запит
+Separate Query from Modifier
+10Рисунок 10 – Метод, що лише записує в БД дані
+Separate Query from Modifier
+11
+Рисунок 11 – Використання змінених методів
+Split Temporary Variable
+12
+Рисунок 12 – Використання однієї тимчасової змінної кілька разів
+Split Temporary Variable
+13
+Рисунок 13 – Використання окремих змінних для кожної перевірки
+Висновки
+У результаті виконання роботи було успішно застосовано
+методи рефакторингу Consolidate Conditional Expression,
+Separate Query from Modifier та Split Temporary Variable до
+реального коду. Застосування цих методів дозволило значно
+покращити структуру коду, підвищити його читаємість та
+зменшити складність. Вони сприяли зменшенню дублювання
+логіки, чіткішому розподілу відповідальностей між методами та
+покращенню загальної підтримуваності коду.
+14
+Використані джерела
+• Fowler, M. Refactoring: Improving the Design of Existing Code / M.
+Fowler. – 1st ed. – Boston: Addison-Wesley, 1999. – 336 p.
+• Fowler, M. Refactoring: Improving the Design of Existing Code / M.
+Fowler. – 2nd ed. – Boston: Addison-Wesley, 2018. – 464 p.
+15
+Дякую за увагу
