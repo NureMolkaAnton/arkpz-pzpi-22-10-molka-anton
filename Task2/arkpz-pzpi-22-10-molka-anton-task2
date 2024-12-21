@@ -1,0 +1,510 @@
+МІНІСТЕРСТВО ОСВІТИ І НАУКИ УКРАЇНИ
+
+ХАРКІВСЬКИЙ НАЦІОНАЛЬНИЙ
+УНІВЕРСИТЕТ РАДІОЕЛЕКТРОНІКИ
+
+Кафедра «Програмна інженерія»
+
+
+
+ЗВІТ
+до лабораторної роботи №2 з дисципліни
+«Аналіз та рефакторинг коду»
+На тему: «РОЗРОБКА БАЗИ ДАНИХ ДЛЯ СЕРВЕРНОЇ ЧАСТИНИ ПРОГРАМНОЇ СИСТЕМИ ТА ПРИКЛАДНОГО ПРОГРАМНОГО ІНТЕРФЕЙСУ (API)»
+
+
+Виконав:								     Перевірив:
+ст. гр. ПЗПІ-22-10 							 ас. кафедри ПІ
+Молька Антон Васильович 				    	         Дашенков Д. С.
+
+
+
+
+
+Харків 2024
+ 
+1. Інженерні рішення
+	Для зберігання даних було обрано СУБД PostgreSQL.
+Вона здатна ефективно обробляти часті записи, що є ключовим для системи, в якій велика кількість IoT-пристроїв регулярно надсилає дані. Завдяки оптимізованій архітектурі та підтримці функцій запобігання конфліктв, забезпечується уникнення дублювання записів та висока продуктивність. PostgreSQL не потребує ліцензійних витрат, що робить її економічно вигідною для невеликих систем із потенціалом зростання. Вона стабільно працює як на стандартному серверному обладнанні, так і в хмарних середовищах.
+Для розробки серверного API було вирішено використовувати Qt C++. Qt гнучкість у створенні високопродуктивних рішень та має бібліотеки для роботи з мережею, базами даних і формуванням JSON-об'єктів. Це дозволяє швидко інтегрувати API з іншими частинами системи, такими як вебсайт і мобільний додаток.
+API одночасно використовує два типи протоколів: Restful API та MQTT.
+•	Restful API: Використовується для взаємодії з клієнтськими застосунками, такими як вебсайт або мобільний додаток. Його переваги включають зрозумілий підхід до побудови URL-адрес для запитів, стандартні методи HTTP (GET, POST, PUT, DELETE) та легку інтеграцію з різноманітними фронтенд-фреймворками.
+•	MQTT: Використовується для обробки запитів від IoT-пристроїв, які забезпечують передачу телеметричних даних. Цей легкий протокол ідеально підходить для пристроїв з обмеженими ресурсами та нестабільним підключенням до мережі. Завдяки механізму публікації/підписки MQTT забезпечує низьку затримку при обміні повідомленнями, що є критично важливим для моніторингу даних від IoT-пристроїв у реальному часі.
+
+2. Use Case діаграма проєкту
+ 
+Рисунок 2.1 – Use Case діаграма
+
+
+3. Специфікація API для взаємодії серверної частини з клієнтами.
+User
+GET Get user info
+http://localhost/api/users?id={{userId}}
+
+Query Params
+id
+{{userId}}
+
+Example
+Successful response
+Request
+cURL
+curl -s -L -g 'https://farming-simulator.pstmn.io/api/users?id={{userId}}'
+200 OK
+Response
+•	Body
+•	Headers (1)
+json
+{
+    "id": 12345,
+    "email": "user@example.com"
+}
+
+PATCH Update user info
+http://localhost/api/users?id={{userId}}
+
+Query Params
+id
+{{userId}}
+Body raw (json)
+json
+{
+    "email": "newuser@example.com",
+    "password": "new81dc9bdb52d04dc20036dbd8313ed055"
+}
+// Not every filed require
+
+Example
+Successful response
+Request
+cURL
+curl -s -L -g -X PATCH 'https://farming-simulator.pstmn.io/api/users?id={{userId}}' -H 'Content-Type: application/json' --data-raw '{
+    "email": "newuser@example.com",
+    "password": "new81dc9bdb52d04dc20036dbd8313ed055"
+}
+// Not every filed require'
+200 OK
+Response
+•	Body
+•	Headers (1)
+No response body
+This request doesn't return any response body.
+
+DELETE Delete user
+http://localhost/api/users?id={{userId}}
+
+Query Params
+id
+{{userId}}
+
+Example
+Successful response
+Request
+cURL
+curl -s -L -g -X DELETE 'https://farming-simulator.pstmn.io/api/users?id={{userId}}'
+200 OK
+Response
+•	Body
+•	Headers (1)
+No response body
+This request doesn't return any response body.
+
+POST Register user
+http://localhost/api/users/register
+
+Body raw (json)
+json
+{
+    "email": "user@example.com",
+    "password": "81dc9bdb52d04dc20036dbd8313ed055"
+}
+
+Example
+Successful response
+Request
+cURL
+curl -s -L 'https://farming-simulator.pstmn.io/api/users/register' --data-raw '{
+    "email": "user@example.com",
+    "password": "81dc9bdb52d04dc20036dbd8313ed055"
+}
+// All fields require.'
+200 OK
+Response
+•	Body
+•	Headers (1)
+json
+{
+    "id": 12345,
+    "email": "user@example.com"
+}
+
+POST Login user
+
+{{base_url}}/api/users/login
+
+Body raw (json)
+json
+{
+    "email": "user@example.com",
+    "password": "81dc9bdb52d04dc20036dbd8313ed055"
+}
+
+Example
+Successful response
+Request
+cURL
+curl -s -L 'https://farming-simulator.pstmn.io/api/users/login' --data-raw '{
+    "email": "user@example.com",
+    "password": "81dc9bdb52d04dc20036dbd8313ed055"
+}
+// All fields require.'
+200 OK
+Response
+•	Body
+•	Headers (1)
+json
+{
+    "id": 12345,
+    "email": "user@example.com",
+    "avatar": "https://example.com/user/r5u9qpvmujfjf6lbqmga.jpg"
+}
+
+Sensor
+GET Get sensor info
+http://localhost/api/sensor?id={{userId}}
+
+Query Params
+id
+{{userId}}
+
+Example
+Successful response
+Request
+cURL
+curl -s -L -g 'https://farming-simulator.pstmn.io/api/sensor?id={{sensorId}}'
+200 OK
+Response
+•	Body
+•	Headers (1)
+json
+{
+    "id": 12345,
+    "type" : {
+        "id": 123, 
+        "name" : "temperature"
+    },
+    "solar_panel_id" : 123,
+    "created_at": 1712988368,
+    "updated_at": 1712988368
+}
+
+GET Get sensors for solar panel
+http://localhost/api/sensor/list/solarpanel?panel_id={{panelId}}&page={{page}}&limit={{limit}}
+
+Query Params
+panel_id
+{{panelId}}
+page
+{{page}}
+by default 1
+limit
+{{limit}}
+by default 25
+
+Example
+Successful response
+Request
+cURL
+curl -s -L -g 'https://farming-simulator.pstmn.io/api/sensor/list/solarpanel?panel_id={{panelId}}&page={{page}}&limit={{limit}}'
+200 OK
+Response
+•	Body
+•	Headers (0)
+{
+    "panels" : [
+        {
+            "id": 12345,
+            "type" : {
+                "id": 123, 
+                "name" : "temperature"
+            },
+            "solar_panel_id" : 123,
+            "created_at": 1712988368,
+            "updated_at": 1712989654
+        }, 
+        {
+            "id": 12346,
+            "type" : {
+                "id": 123, 
+                "name" : "temperature"
+            },
+            "solar_panel_id" : 123,
+            "created_at": 1712988395,
+            "updated_at": 1712995678
+        }
+    ], 
+    "total_count": 2
+}
+
+DELETE Delete sensor
+http://localhost/api/sensor?id={{sensorId}}
+
+Query Params
+id
+{{sensorId}}
+
+Example
+Successful response
+Request
+cURL
+curl -s -L -g -X DELETE 'https://farming-simulator.pstmn.io/api/sensor?id={{sensorId}}'
+200 OK
+Response
+•	Body
+•	Headers (0)
+No response body
+This request doesn't return any response body.
+
+POST Create sensor
+http://localhost/api/sensor
+
+Body raw (json)
+json
+{
+    "type_id" : 123,
+    "solar_panel_id" : 123
+}
+Example
+Successful response
+
+Request
+cURL
+curl -s -L 'https://farming-simulator.pstmn.io/api/sensor' -d '{"type_id":123,"solar_panel_id":123}'
+200 OK
+Response
+•	Body
+•	Headers (0)
+{
+    "id": 12345,
+    "type" : {
+        "id": 123, 
+        "name" : "temperature"
+    },
+    "solar_panel_id" : 123,
+    "created_at": 1712988368,
+    "updated_at": null
+}
+Solar Panel
+GET Get solar panel info
+http://localhost/api/solarpanel?id={{panelId}}
+
+Query Params
+id
+{{panelId}}
+
+Example
+Successful response
+Request
+cURL
+curl -s -L -g 'https://farming-simulator.pstmn.io/api/solarpanel?id={{panelId}}'
+200 OK
+Response
+•	Body
+•	Headers (1)
+json
+{
+    "id": 12345,
+    "location" : "Somewhere",
+    "user_id" : 123,
+    "created_at": 1712988368,
+    "updated_at": 1712988368
+}
+
+
+GET Get solar panels for user
+http://localhost/api/solarpanel/list/user?user_id={{userId}}&page={{page}}&limit={{limit}}
+
+Query Params
+user_id
+{{userId}}
+page
+{{page}}
+by default 1
+limit
+{{limit}}
+by default 25
+
+Example
+Successful response
+Request
+cURL
+curl -s -L -g 'https://farming-simulator.pstmn.io/api/solarpanel/list/user?user_id={{userId}}&page={{page}}&limit={{limit}}'
+200 OK
+Response
+•	Body
+•	Headers (0)
+{
+    "panels" : [
+        {
+            "id": 12345,
+            "location" : "Somewhere",
+            "created_at": 1712988368,
+            "updated_at": 1712988368
+        }, 
+        {
+            "id": 12346,
+            "location" : "Somewhere",
+            "created_at": 1712988757,
+            "updated_at": 1712985645
+        }
+    ], 
+    "total_count": 2
+}
+
+PATCH Update solar panel info
+http://localhost/api/solarpanel?id={{panelId}}
+
+Query Params
+id
+{{panelId}}
+Body raw (json)
+json
+{
+    "location" : "Somewhere"
+}
+
+Example
+Successful response
+Request
+cURL
+curl -s -L -g -X PATCH 'https://farming-simulator.pstmn.io/api/solarpanel?id={{userId}}' -H 'Content-Type: application/json' -d '{"location":"Somewhere"}'
+200 OK
+Response
+•	Body
+•	Headers (1)
+No response body
+This request doesn't return any response body.
+
+DELETE Delete solar panel
+
+http://localhost/api/solarpanel?id={{panelId}}
+
+Query Params
+id
+{{panelId}}
+
+Example
+Successful response
+Request
+cURL
+curl -s -L -g -X DELETE 'https://farming-simulator.pstmn.io/api/solarpanel?id={{panelId}}'
+200 OK
+Response
+•	Body
+•	Headers (0)
+No response body
+This request doesn't return any response body.
+
+POST Create solar panel
+
+http://localhost/api/solarpanel
+
+Body raw (json)
+json
+{
+    "user_id" : 123,
+    "location" : "Somewhere"
+}
+Example
+Successful response
+Request
+
+cURL
+curl -s -L 'https://farming-simulator.pstmn.io/api/sensor' -d '{"user_id":123,"location":"Somewhere"}'
+200 OK
+Response
+•	Body
+•	Headers (0)
+{
+    "id": 12345,
+    "location" : "Somewhere",
+    "user_id" : 123,
+    "created_at": 1712988368,
+    "updated_at": 1712988368
+}
+
+Measurement
+GET Get measurement
+
+http://localhost/api/measurement?id={{measurementId}}
+
+Query Params
+id
+{{measurementId}}
+
+Example
+Successful response
+Request
+cURL
+curl -s -L -g 'https://farming-simulator.pstmn.io/api/measurement?id={{measurementId}}'
+200 OK
+Response
+•	Body
+•	Headers (1)
+json
+{
+    "id": 12345,
+    "data": 76,
+    "recorded_at": 657546,
+    "solar_panel_id": 234,
+    "sensor_id": 56
+}
+
+GET Get measurements for sensor
+
+http://localhost/api/measurement?id={{measurementId}}
+Query Params
+id
+{{measurementId}}
+Example
+Successful response
+Request
+
+cURL
+curl -s -L -g 'https://farming-simulator.pstmn.io/api/measurementlist/sensor?sensor_id={{sensorId}}&start_date={{startDate}}&end_date={{endDate}}'
+200 OK
+Response
+•	Body
+•	Headers (1)
+json
+{
+    "measurements" : [
+        {
+            "id": 12345,
+            "data": 76,
+            "recorded_at": 657546,
+            "sensor_id": 56
+        }, 
+        {
+            "id": 12346,
+            "data": 74,
+            "recorded_at": 657589,
+            "sensor_id": 56
+        }
+    ], 
+    "total_count": 2
+}
+
+
+
+4. Структура БД
+
+
+ 
+Рисунок 4.1 - Структура бази даних
+
+
+ 
+Рисунок 4.2 - ER діаграма
+
+
