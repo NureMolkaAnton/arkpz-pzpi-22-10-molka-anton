@@ -1,3 +1,12 @@
 [submodule "Task2/ArkaNova"]
 	path = Task2/ArkaNova
 	url = https://github.com/Kirixo/ArkaNova
+[submodule "Task3/ArkaNova"]
+	path = Task3/ArkaNova
+	url = https://github.com/Kirixo/ArkaNova
+[submodule "Task4/ArkaNova"]
+	path = Task4/ArkaNova
+	url = https://github.com/Kirixo/ArkaNova
+[submodule "Task5/ArkaNova"]
+	path = Task5/ArkaNova
+	url = https://github.com/Kirixo/ArkaNova
