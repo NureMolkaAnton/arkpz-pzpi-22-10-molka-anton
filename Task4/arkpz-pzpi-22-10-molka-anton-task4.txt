@@ -1,0 +1,132 @@
+МІНІСТЕРСТВО ОСВІТИ І НАУКИ УКРАЇНИ
+
+ХАРКІВСЬКИЙ НАЦІОНАЛЬНИЙ
+УНІВЕРСИТЕТ РАДІОЕЛЕКТРОНІКИ
+
+Кафедра «Програмна інженерія»
+
+
+
+ЗВІТ
+до лабораторної роботи №4 з дисципліни
+«Аналіз та рефакторинг коду»
+На тему: «РОЗРОБКА БІЗНЕС-ЛОГІКИ ТА ФУНКЦІЙ АДМІНІСТРУВАННЯ СЕРВЕРНОЇ ЧАСТИНИ ПРОГРАМНОЇ СИСТЕМИ»
+
+
+Виконав: 
+ст. гр. ПЗПІ-22-10 			
+Молька Антон Васильович	
+
+Перевірив:
+ас. кафедри ПІ
+Дашенков Дмитро Сергійович
+
+
+
+
+
+Харків 2024
+ 
+1. Інженерні рішення
+У проєкті для взаємодії із температурними датчиками використовується модуль ESP8266 на платформі NodeMCU v3, який виконує роль основного елемента зв’язку та обробки даних. Цей модуль забезпечує компактне, енергоефективне рішення для інтеграції IoT-пристроїв у систему моніторингу енергогенерації.
+Для високоточних вимірювань температури використовується датчик PT100, який є надійним і широко застосовується у промислових умовах. Сигнали з цього аналогового датчика конвертуються в цифровий формат за допомогою модуля MAX31865, що забезпечує стабільну передачу даних без втрати точності.
+Модуль ESP8266 отримує дані від MAX31865, обробляє їх та формує повідомлення. Передача даних до серверу здійснюється за допомогою протоколу MQTT, який забезпечує ефективну та надійну доставку інформації для подальшої обробки та збереження на сервері.
+На рисунках 1.1 та 1.2 представлено прототип IoT девайсу. Зі схеми на рисунку 1.1 видно підключення пінів та підключення датчика температури до перетворювача. Оскільки мною використовуюється двохканальний датчик температури, між клемами RTD- F- та RTD+ F+ було встановлено перемички. На рисунку 1.2 вже представлено цілком функціональний прототип. 
+
+ 
+Рисунок 1.1 – Схема підключення компонентів
+ 
+ 
+Рисунок 1.2 – Готовий прототип IoT-девайсу.
+
+2. Діаграма діяльності серверної частини
+ 
+Рисунок 2.1 – Діаграма діяльності 
+3. Діаграма прецедентів IoT
+
+ 
+Рисунок 3.1 – Діаграма прецедентів
+ 
+ДОДАТОК А
+Код налаштування IoT клієнта
+
+#include <Adafruit_MAX31865.h>
+#include <ESP8266WiFi.h>
+#include <PubSubClient.h>
+
+// Wi-Fi credentials
+const char* ssid = "WIFI-NAME";
+const char* password = "password";
+
+// MQTT broker details
+const char* mqtt_server = "192.168.0.101";
+const int mqtt_port = 1883;
+const char* mqtt_user = "";
+const char* mqtt_password = "";
+
+// Sensors IDs
+const String sensor_id = "3";
+
+// MQTT topics
+const char* mqtt_topic_publish = "mqtt/api/measure";
+const char* mqtt_topic_error = "mqtt/api/error";
+
+// Wi-Fi and MQTT clients
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void connectWiFi();
+void connectMQTT();
+void callback(char* topic, byte* message, unsigned int length);
+
+// MAX31865 pins
+#define MAX_CS   D8 // Chip Select
+#define MAX_MOSI D7 // Master Out Slave In
+#define MAX_MISO D6 // Master In Slave Out
+#define MAX_CLK  D5 // Clock
+
+// Create an instance of the sensor (RTD type, wires)
+Adafruit_MAX31865 max31865 = Adafruit_MAX31865(MAX_CS, MAX_MOSI, MAX_MISO, MAX_CLK);
+
+const float MIN_TEMPERATURE = -50.0; 
+const float MAX_TEMPERATURE = 150.0;
+
+void setup() {
+  Serial.begin(9600);
+  
+  connectWiFi();
+
+  // Setup MQTT client
+  client.setServer(mqtt_server, mqtt_port);
+  client.setCallback(callback);
+  connectMQTT();
+
+  // Initialize the MAX31865 (2-wire PT100)
+  max31865.begin(MAX31865_2WIRE);
+}
+
+void connectWiFi() {
+  Serial.print("Connecting to Wi-Fi");
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWi-Fi connected. IP address: " + WiFi.localIP().toString());
+}
+
+void connectMQTT() {
+  Serial.print("Connecting to MQTT broker...");
+  while (!client.connected()) {
+    String clientId = "ESP32Client-" + String(random(0xffff), HEX);
+    if (client.connect(clientId.c_str(), mqtt_user, mqtt_password)) {
+      Serial.println("connected.");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" retrying in 5 seconds.");
+      delay(5000);
+    }
+  }
+}
+

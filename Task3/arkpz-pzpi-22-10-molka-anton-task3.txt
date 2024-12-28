@@ -1,0 +1,182 @@
+МІНІСТЕРСТВО ОСВІТИ І НАУКИ УКРАЇНИ
+
+ХАРКІВСЬКИЙ НАЦІОНАЛЬНИЙ
+УНІВЕРСИТЕТ РАДІОЕЛЕКТРОНІКИ
+
+Кафедра «Програмна інженерія»
+
+
+
+ЗВІТ
+до лабораторної роботи №3 з дисципліни
+«Аналіз та рефакторинг коду»
+На тему: «РОЗРОБКА БІЗНЕС-ЛОГІКИ ТА ФУНКЦІЙ АДМІНІСТРУВАННЯ СЕРВЕРНОЇ ЧАСТИНИ ПРОГРАМНОЇ СИСТЕМИ»
+
+
+Виконав: 
+ст. гр. ПЗПІ-22-10 			
+Молька Антон Васильович	
+
+Перевірив:
+ас. кафедри ПІ
+Дашенков Дмитро Сергійович
+
+
+
+
+
+Харків 2024
+ 
+1. Інженерні рішення
+Система розроблена для обробки даних від IoT пристроїв, їх збереження у базі даних та надання користувачам доступу до вимірювань через серверний API. Основний акцент зроблено на забезпеченні безпечного доступу до історичних даних сенсорів за обраний часовий проміжок.
+Обробка даних від IoT пристроїв
+IoT пристрої передають дані про вимірювання через MQTT-брокер, розташований на сервері. Повідомлення містить унікальний ідентифікатор сенсора та значення вимірюванн. MQTT-брокер отримує ці повідомлення та передає їх серверному API.
+Сервер API виконує валідацію даних, перевіряючи, чи існує сенсор у базі даних і чи прив’язаний він до сонячної панелі користувача. Після перевірки дані записуються у таблицю measurement з прив’язкою до відповідного сенсора.
+Запит даних за часовий проміжок
+Однією з основних функцій системи є можливість отримання історичних даних сенсорів за обраний користувачем проміжок часу.
+Користувач надсилає запит до серверного API із зазначенням ідентифікатора сенсора, початкової та кінцевої дати. Сервер виконує наступні дії:
+1.	Перевіряє, чи авторизований користувач.
+2.	Перевіряє, чи має користувач права доступу до вказаного сенсора, перевіряючи його прив’язку до сонячної панелі, яка належить цьому користувачу.
+3.	Формує SQL-запит до таблиці measurement для отримання записів, які відповідають вказаному сенсору та часовому інтервалу.
+Результат запиту повертається у вигляді JSON-об'єкта, що містить список вимірювань. Кожен запис містить значення, час вимірювання та унікальний ідентифікатор вимірювання. Це дозволяє користувачам зручно переглядати історичні дані для аналізу ефективності роботи сенсорів та сонячних панелей.
+
+2. Діаграма діяльності серверної частини
+ 
+
+Рисунок 2.1 – Діаграма діяльності 
+
+
+
+3. Діаграма взаємодії серверної частини
+
+ 
+Рисунок 3.1 – Діаграма взаємодії
+ 
+ДОДАТОК А
+Код для отримання звіту, щодо даних з певного датчика за певний проміжок часу.
+
+QHttpServerResponse MeasurementHandler::getMeasurementsBySensor(const QHttpServerRequest& request) {
+    bool ok;
+    qint64 sensorId = request.query().queryItemValue("sensor_id").toLongLong(&ok);
+
+    if (!ok) {
+        return ResponseFactory::createResponse("Sensor ID is missing or invalid.",
+                                               QHttpServerResponse::StatusCode::BadRequest);
+    }
+
+    auto startDateStr = request.query().queryItemValue("start_date");
+    auto endDateStr = request.query().queryItemValue("end_date");
+
+    QDateTime startDate = startDateStr.isEmpty()
+                              ? QDateTime()
+                              : QDateTime::fromString(startDateStr, Qt::ISODate);
+    QDateTime endDate = endDateStr.isEmpty() ? QDateTime::currentDateTime()
+                                             : QDateTime::fromString(endDateStr, Qt::ISODate);
+
+    auto measurements = measurementRepository_->getMeasurementsBySensorAndDate(sensorId, startDate, endDate);
+    QJsonArray jsonMeasurements;
+    for (const auto& measurement : measurements) {
+        jsonMeasurements.append(measurement.toJson());
+    }
+
+    return ResponseFactory::createJsonResponse(QJsonDocument(jsonMeasurements).toJson(),
+                                               QHttpServerResponse::StatusCode::Ok);
+}
+
+QList<Measurement> MeasurementRepository::getMeasurementsBySensorAndDate(qint64 sensorId,
+                                                                         const QDateTime& startDate,
+                                                                         const QDateTime& endDate) {
+    QList<Measurement> measurements;
+    QSqlQuery query(DBController::getDatabase());
+
+    QString queryString = R"(
+        SELECT id, data, recorded_at, sensor_id
+        FROM measurement
+        WHERE sensor_id = :sensor_id
+    )";
+
+    if (!startDate.isNull()) {
+        queryString += " AND recorded_at >= :start_date";
+    }
+
+    if (!endDate.isNull()) {
+        queryString += " AND recorded_at <= :end_date";
+    }
+
+    queryString += " ORDER BY recorded_at DESC";
+
+    query.prepare(queryString);
+    query.bindValue(":sensor_id", sensorId);
+
+    if (!startDate.isNull()) {
+        query.bindValue(":start_date", startDate.toString(Qt::ISODate));
+    }
+
+    if (!endDate.isNull()) {
+        query.bindValue(":end_date", endDate.toString(Qt::ISODate));
+    }
+
+    if (query.exec()) {
+        while (query.next()) {
+            SensorRepository sensorRepository;
+            auto sensor = sensorRepository.getSensorById(query.value("sensor_id").toLongLong());
+            if(!sensor) {
+                return {};
+            }
+
+            measurements.append(Measurement(query.value("id").toLongLong(),
+                                            query.value("data").toByteArray(),
+                                            query.value("recorded_at").toDateTime(),
+                                            sensor.value()));
+        }
+    } else {
+        qDebug() << "Database error while fetching Measurements by Sensor and Date:" << query.lastError().text();
+    }
+
+    return measurements;
+}
+
+
+Отримання списку панелей користувача
+
+QHttpServerResponse SolarPanelHandler::getSolarPanelListByUser(const QHttpServerRequest& request) {
+    int userId = request.query().queryItemValue("user_id").toInt();
+    int page = request.query().queryItemValue("page").toInt() ?: 1;
+    int limit = request.query().queryItemValue("limit").toInt() ?: 25;
+
+    auto panels = solarPanelRepository_->getPanelsByUser(userId, page, limit);
+    QJsonArray panelArray;
+    for (const auto& panel : panels) {
+        panelArray.append(panel.toJson());
+    }
+
+    return ResponseFactory::createJsonResponse(QJsonDocument(panelArray).toJson(), QHttpServerResponse::StatusCode::Ok);
+}
+
+
+QList<SolarPanel> SolarPanelRepository::getPanelsByUser(qint64 userId, qint32 page, qint32 limit) {
+    QList<SolarPanel> solarPanels;
+
+    int offset = (page - 1) * limit;
+
+    QSqlQuery query(DBController::getDatabase());
+    query.prepare("SELECT id, location, user_id FROM solar_panel WHERE user_id = :user_id LIMIT :limit OFFSET :offset");
+    query.bindValue(":user_id", userId);
+    query.bindValue(":limit", limit);
+    query.bindValue(":offset", offset);
+
+    if (query.exec()) {
+        UserRepository userRepository;
+
+        while (query.next()) {
+            auto user = userRepository.getUserById(userId);
+            if (!user) {
+                return {};
+            }
+            solarPanels.append(SolarPanel(query.value("id").toLongLong(),
+                                          query.value("location").toString(),
+                                          user.value()));
+        }
+    }
+    return solarPanels;
+}
